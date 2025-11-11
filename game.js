@@ -1,1422 +1,1000 @@
-/**
- * Dream Horror RPG - Production Ready Game
- * A psychological horror experience in the dream realm
- * @version 1.0.0
- * @license MIT
- */
-
-// Game Configuration Constants
+// ========== GAME CONFIGURATION ==========
 const CONFIG = {
-    // Player configuration
     PLAYER: {
         SIZE: 96,
-        SPEED: 2.2,
+        SPEED: 2.0,
         HP_MAX: 100,
         HIT_COOLDOWN: 900,
-        HIT_DAMAGE: 12,
-        PUSH_FORCE: 10,
-        INVINCIBILITY_DURATION: 500
+        HIT_DAMAGE: 10,
+        PUSH_FORCE: 8
     },
-    
-    // Entity configuration
     ENTITIES: {
-        COUNT: { MIN: 2, MAX: 5 },
-        SIZE: { MIN: 40, MAX: 80 },
-        SPEED: 0.7,
-        SPAWN_RATE: 0.008
+        COUNT: { MIN: 2, MAX: 4 },
+        SIZE: { MIN: 36, MAX: 84 },
+        SPEED: 0.6
     },
-    
-    // Eye entities configuration
     EYES: {
-        SPAWN_CHANCE: 0.65,
-        SPAWN_TIMER: { MIN: 2500, MAX: 5000 },
-        SIZE: { MIN: 25, MAX: 55 },
-        ALPHA_MAX: 0.6,
-        OPEN_SPEED: { MIN: 0.004, MAX: 0.007 },
-        TTL: { MIN: 8, MAX: 18 }
+        SPAWN_CHANCE: 0.7,
+        SPAWN_TIMER: { MIN: 2200, MAX: 4800 },
+        SIZE: { MIN: 30, MAX: 60 },
+        ALPHA_MAX: 0.55,
+        OPEN_SPEED: { MIN: 0.003, MAX: 0.006 },
+        TTL: { MIN: 6, MAX: 16 }
     },
-    
-    // Environmental effects
     FOG: {
-        COUNT: 5,
-        MAX: 6,
-        RADIUS: { MIN: 150, MAX: 350 },
-        SPEED: { MIN: 0.015, MAX: 0.025 },
-        ALPHA: { MIN: 0.03, MAX: 0.16 }
+        COUNT: 4,
+        MAX: 5,
+        RADIUS: { MIN: 120, MAX: 320 },
+        SPEED: { MIN: 0.01, MAX: 0.21 },
+        ALPHA: { MIN: 0.02, MAX: 0.14 }
     },
-    
-    // Particle system
     PARTICLES: {
-        COUNT: 80,
-        MAX: 70,
-        SIZE: { MIN: 0.8, MAX: 3.0 },
-        SPEED_X: { MIN: 0.06, MAX: 0.6 },
-        SPEED_Y: { MIN: -0.12, MAX: 0.12 },
-        ALPHA: { MIN: 0.2, MAX: 0.7 },
-        SPAWN_RATE: 0.2
+        COUNT: 70,
+        MAX: 60,
+        SIZE: { MIN: 0.6, MAX: 2.6 },
+        SPEED_X: { MIN: 0.05, MAX: 0.55 },
+        SPEED_Y: { MIN: -0.15, MAX: 0.15 },
+        ALPHA: { MIN: 0.15, MAX: 0.65 }
     },
-    
-    // Audio configuration
     AUDIO: {
         TITLE_VOLUME: 0.5,
         BGM_VOLUME: 0.5,
         WIND_VOLUME: 0.3,
         HIT_VOLUME: 0.3,
-        GLITCH_VOLUME: 0.3,
-        MASTER_VOLUME: 1.0
-    },
-    
-    // Performance settings
-    PERFORMANCE: {
-        MAX_ENTITIES: 8,
-        MAX_EYES: 15,
-        MAX_PARTICLES: 100,
-        FRAME_RATE: 60
+        GLITCH_VOLUME: 0.3
     }
 };
 
-/**
- * Game State Management Class
- * Handles all game state and transitions
- */
+// ========== GAME STATE MANAGEMENT ==========
 class GameState {
     constructor() {
-        this.audioEnabled = true;
+        this.audioOn = true;
         this.paused = true;
-        this.onTitleScreen = true;
-        this.titleAudioStarted = false;
-        this.gameActive = false;
+        this.onTitle = true;
+        this.titleInteracted = false;
+        this.gameStarted = false;
         this.gameOver = false;
-        this.gameStartTime = 0;
-        this.lastFrameTime = performance.now();
-        this.musicChanged = false;
-        this.playerInvincible = false;
+        this.startedAtTime = 0;
+        this.lastFrame = performance.now();
+        this.isMobile = this.detectMobile();
+    }
+    
+    detectMobile() {
+        return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+               'ontouchstart' in window || navigator.maxTouchPoints > 0;
     }
     
     reset() {
-        this.audioEnabled = true;
-        this.paused = true;
-        this.onTitleScreen = true;
-        this.titleAudioStarted = false;
-        this.gameActive = false;
+        this.onTitle = true;
+        this.gameStarted = false;
         this.gameOver = false;
-        this.gameStartTime = 0;
-        this.musicChanged = false;
-        this.playerInvincible = false;
-    }
-    
-    startGame() {
-        this.onTitleScreen = false;
-        this.gameActive = true;
-        this.gameOver = false;
-        this.paused = false;
-        this.gameStartTime = performance.now();
-    }
-    
-    endGame() {
-        this.gameActive = false;
-        this.gameOver = true;
+        this.titleInteracted = false;
+        this.startedAtTime = 0;
         this.paused = true;
     }
 }
 
-/**
- * Advanced Audio Management System
- * Handles all audio operations with proper error handling
- */
+// ========== AUDIO MANAGER ==========
 class AudioManager {
     constructor() {
-        this.audioElements = new Map();
-        this.audioContext = null;
-        this.masterGain = null;
-        this.initialized = false;
+        this.titleMusic = new Audio("assets/title.ogg");
+        this.bgm = new Audio("assets/bgm.ogg");
+        this.windSnd = new Audio("assets/wind.ogg");
+        this.coreDreamMusic = new Audio("assets/coreofadream.mp3");
+        this.hitSound = new Audio("assets/hit.ogg");
+        this.glitchSound = new Audio("assets/glitch.ogg");
         
-        // Audio file configurations
-        this.audioFiles = [
-            { id: 'title', src: 'assets/title.ogg', volume: CONFIG.AUDIO.TITLE_VOLUME, loop: true },
-            { id: 'bgm', src: 'assets/bgm.ogg', volume: CONFIG.AUDIO.BGM_VOLUME, loop: true },
-            { id: 'wind', src: 'assets/wind.ogg', volume: CONFIG.AUDIO.WIND_VOLUME, loop: true },
-            { id: 'coreDream', src: 'assets/coreofadream.mp3', volume: CONFIG.AUDIO.BGM_VOLUME, loop: true },
-            { id: 'hit', src: 'assets/hit.ogg', volume: CONFIG.AUDIO.HIT_VOLUME, loop: false },
-            { id: 'glitch', src: 'assets/glitch.ogg', volume: CONFIG.AUDIO.GLITCH_VOLUME, loop: false }
-        ];
+        this.setupAudio(this.titleMusic, CONFIG.AUDIO.TITLE_VOLUME);
+        this.setupAudio(this.bgm, CONFIG.AUDIO.BGM_VOLUME);
+        this.setupAudio(this.windSnd, CONFIG.AUDIO.WIND_VOLUME);
+        this.setupAudio(this.coreDreamMusic, CONFIG.AUDIO.BGM_VOLUME);
+        this.setupAudio(this.hitSound, CONFIG.AUDIO.HIT_VOLUME);
+        this.setupAudio(this.glitchSound, CONFIG.AUDIO.GLITCH_VOLUME);
         
-        this.currentMusic = null;
-        this.isHitPlaying = false;
-        this.hitTimeout = null;
+        this.hitSound.loop = false;
+        this.glitchSound.loop = false;
+        
+        this.hitSound.addEventListener('ended', this.onHitSoundEnded.bind(this));
+        
+        this.isHitSoundPlaying = false;
+        this.hitSoundTimeout = null;
     }
     
-    async initialize() {
-        try {
-            // Create audio context for better control
-            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            this.masterGain = this.audioContext.createGain();
-            this.masterGain.gain.value = CONFIG.AUDIO.MASTER_VOLUME;
-            this.masterGain.connect(this.audioContext.destination);
-            
-            // Preload all audio files
-            await this.preloadAudio();
-            this.initialized = true;
-            return true;
-        } catch (error) {
-            console.warn('Web Audio API not supported, falling back to HTML5 Audio:', error);
-            await this.preloadAudio();
-            this.initialized = true;
-            return true;
-        }
+    setupAudio(audio, volume) {
+        audio.loop = true;
+        audio.volume = volume;
+        audio.preload = "auto";
     }
     
-    async preloadAudio() {
-        const loadPromises = this.audioFiles.map(file => this.loadAudioFile(file));
-        await Promise.allSettled(loadPromises);
-    }
-    
-    async loadAudioFile({ id, src, volume, loop }) {
-        return new Promise((resolve, reject) => {
-            const audio = new Audio();
-            audio.preload = 'auto';
-            audio.volume = volume;
-            audio.loop = loop;
-            
-            audio.addEventListener('canplaythrough', () => resolve(audio), { once: true });
-            audio.addEventListener('error', () => {
-                console.warn(`Failed to load audio: ${src}`);
-                resolve(null);
-            });
-            
-            audio.src = src;
-            this.audioElements.set(id, audio);
-            
-            // Force loading
-            audio.load();
+    stopAll() {
+        [this.titleMusic, this.bgm, this.windSnd, this.coreDreamMusic].forEach(audio => {
+            audio.pause();
+            audio.currentTime = 0;
         });
+        this.stopHitSound();
     }
     
-    play(id) {
-        if (!this.initialized || !gameState.audioEnabled) return;
+    playGameAudio() {
+        if (!gameState.audioOn) return;
         
-        const audio = this.audioElements.get(id);
-        if (audio) {
-            audio.currentTime = 0;
-            audio.play().catch(error => {
-                console.warn(`Could not play audio ${id}:`, error);
+        if (musicChanged) {
+            this.coreDreamMusic.play().catch(() => {});
+        } else {
+            this.bgm.play().catch(() => {});
+            this.windSnd.play().catch(() => {});
+        }
+    }
+    
+    playHit() {
+        if (!gameState.audioOn) return;
+        
+        this.stopHitSound();
+        
+        try {
+            this.hitSound.currentTime = 0;
+            this.hitSound.play().then(() => {
+                this.isHitSoundPlaying = true;
+                
+                this.hitSoundTimeout = setTimeout(() => {
+                    if (this.isHitSoundPlaying) {
+                        this.stopHitSound();
+                    }
+                }, 2000);
+            }).catch(error => {
+                this.isHitSoundPlaying = false;
             });
+        } catch (error) {
+            this.isHitSoundPlaying = false;
         }
     }
     
-    stop(id) {
-        const audio = this.audioElements.get(id);
-        if (audio) {
-            audio.pause();
-            audio.currentTime = 0;
+    onHitSoundEnded() {
+        this.isHitSoundPlaying = false;
+        if (this.hitSoundTimeout) {
+            clearTimeout(this.hitSoundTimeout);
+            this.hitSoundTimeout = null;
         }
-    }
-    
-    pause(id) {
-        const audio = this.audioElements.get(id);
-        if (audio) {
-            audio.pause();
-        }
-    }
-    
-    setVolume(id, volume) {
-        const audio = this.audioElements.get(id);
-        if (audio) {
-            audio.volume = Math.max(0, Math.min(1, volume));
-        }
-    }
-    
-    // Specialized audio methods
-    playHitSound() {
-        if (this.isHitPlaying) return;
-        
-        this.isHitPlaying = true;
-        this.play('hit');
-        
-        this.hitTimeout = setTimeout(() => {
-            this.isHitPlaying = false;
-        }, 500);
     }
     
     stopHitSound() {
-        if (this.hitTimeout) {
-            clearTimeout(this.hitTimeout);
-            this.hitTimeout = null;
-        }
-        this.isHitPlaying = false;
-        this.stop('hit');
-    }
-    
-    playGameMusic() {
-        if (gameState.musicChanged) {
-            this.play('coreDream');
-            this.currentMusic = 'coreDream';
-        } else {
-            this.play('bgm');
-            this.play('wind');
-            this.currentMusic = 'bgm';
-        }
-    }
-    
-    stopAllMusic() {
-        this.stop('title');
-        this.stop('bgm');
-        this.stop('wind');
-        this.stop('coreDream');
-        this.currentMusic = null;
-    }
-    
-    setMasterVolume(volume) {
-        const newVolume = Math.max(0, Math.min(1, volume));
-        if (this.masterGain) {
-            this.masterGain.gain.value = newVolume;
-        }
-        // Also update HTML5 audio volumes
-        this.audioElements.forEach(audio => {
-            if (audio) {
-                const originalVolume = this.audioFiles.find(f => this.audioElements.get(f.id) === audio)?.volume || 1;
-                audio.volume = originalVolume * newVolume;
+        try {
+            this.hitSound.pause();
+            this.hitSound.currentTime = 0;
+            this.isHitSoundPlaying = false;
+            
+            if (this.hitSoundTimeout) {
+                clearTimeout(this.hitSoundTimeout);
+                this.hitSoundTimeout = null;
             }
-        });
+        } catch (error) {}
+    }
+    
+    playGlitch() {
+        if (gameState.audioOn) {
+            this.glitchSound.currentTime = 0;
+            this.glitchSound.play().catch(() => {});
+        }
     }
 }
 
-/**
- * Player Class with Enhanced Controls
- * Handles player state, movement, and interactions
- */
+// ========== VIRTUAL JOYPAD ==========
+class VirtualJoypad {
+    constructor() {
+        this.base = document.getElementById('joypadBase');
+        this.stick = document.getElementById('joypadStick');
+        this.mobileControls = document.getElementById('mobileControls');
+        
+        this.isActive = false;
+        this.baseRect = null;
+        this.maxStickDistance = 40;
+        this.vector = { x: 0, y: 0 };
+        
+        this.init();
+    }
+    
+    init() {
+        this.bindEvents();
+    }
+    
+    bindEvents() {
+        this.base.addEventListener('touchstart', this.handleTouchStart.bind(this), { passive: false });
+        document.addEventListener('touchmove', this.handleTouchMove.bind(this), { passive: false });
+        document.addEventListener('touchend', this.handleTouchEnd.bind(this));
+        document.addEventListener('touchcancel', this.handleTouchEnd.bind(this));
+        
+        this.base.addEventListener('mousedown', this.handleMouseDown.bind(this));
+        document.addEventListener('mousemove', this.handleMouseMove.bind(this));
+        document.addEventListener('mouseup', this.handleMouseUp.bind(this));
+    }
+    
+    handleTouchStart(e) {
+        e.preventDefault();
+        this.activate(e.touches[0]);
+    }
+    
+    handleTouchMove(e) {
+        e.preventDefault();
+        if (this.isActive) {
+            this.updateStick(e.touches[0]);
+        }
+    }
+    
+    handleTouchEnd(e) {
+        this.deactivate();
+    }
+    
+    handleMouseDown(e) {
+        e.preventDefault();
+        this.activate(e);
+    }
+    
+    handleMouseMove(e) {
+        if (this.isActive) {
+            e.preventDefault();
+            this.updateStick(e);
+        }
+    }
+    
+    handleMouseUp(e) {
+        this.deactivate();
+    }
+    
+    activate(input) {
+        this.isActive = true;
+        this.baseRect = this.base.getBoundingClientRect();
+        this.updateStick(input);
+    }
+    
+    updateStick(input) {
+        const baseCenterX = this.baseRect.left + this.baseRect.width / 2;
+        const baseCenterY = this.baseRect.top + this.baseRect.height / 2;
+        
+        const deltaX = input.clientX - baseCenterX;
+        const deltaY = input.clientY - baseCenterY;
+        
+        const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+        const angle = Math.atan2(deltaY, deltaX);
+        
+        const limitedDistance = Math.min(distance, this.maxStickDistance);
+        
+        const stickX = Math.cos(angle) * limitedDistance;
+        const stickY = Math.sin(angle) * limitedDistance;
+        
+        this.stick.style.transform = `translate(${stickX}px, ${stickY}px)`;
+        
+        this.vector.x = stickX / this.maxStickDistance;
+        this.vector.y = stickY / this.maxStickDistance;
+    }
+    
+    deactivate() {
+        this.isActive = false;
+        this.vector = { x: 0, y: 0 };
+        this.stick.style.transform = 'translate(-50%, -50%)';
+    }
+    
+    show() {
+        this.mobileControls.classList.remove('hidden');
+    }
+    
+    hide() {
+        this.mobileControls.classList.add('hidden');
+        this.deactivate();
+    }
+    
+    getVector() {
+        return this.vector;
+    }
+    
+    isJoypadActive() {
+        return this.isActive;
+    }
+}
+
+// ========== PLAYER CLASS ==========
 class Player {
     constructor() {
         this.reset();
         this.movementEnabled = false;
-        this.invincibilityEndTime = 0;
     }
     
     reset() {
-        this.x = 0;
-        this.y = 0;
+        this.x = canvas.width / 2 - CONFIG.PLAYER.SIZE / 2;
+        this.y = canvas.height / 2 - CONFIG.PLAYER.SIZE / 2;
         this.size = CONFIG.PLAYER.SIZE;
-        this.health = CONFIG.PLAYER.HP_MAX;
-        this.lastHitTime = 0;
+        this.hp = CONFIG.PLAYER.HP_MAX;
+        this.lastHit = 0;
         this.movementEnabled = true;
-        this.invincibilityEndTime = 0;
     }
     
-    initializePosition(canvasWidth, canvasHeight) {
-        this.x = (canvasWidth - this.size) / 2;
-        this.y = (canvasHeight - this.size) / 2;
-    }
-    
-    update(keys, canvasWidth, canvasHeight) {
-        if (!this.canMove()) return;
+    update(keys, joypadVector) {
+        if (!gameState.gameStarted || gameState.gameOver || gameState.paused || !this.movementEnabled) return;
         
         const speed = CONFIG.PLAYER.SPEED;
+        let moveX = 0;
+        let moveY = 0;
         
-        // Movement input handling
-        if (keys['w'] || keys['ArrowUp']) this.y -= speed;
-        if (keys['s'] || keys['ArrowDown']) this.y += speed;
-        if (keys['a'] || keys['ArrowLeft']) this.x -= speed;
-        if (keys['d'] || keys['ArrowRight']) this.x += speed;
+        if (keys["w"] || keys["ArrowUp"]) moveY -= speed;
+        if (keys["s"] || keys["ArrowDown"]) moveY += speed;
+        if (keys["a"] || keys["ArrowLeft"]) moveX -= speed;
+        if (keys["d"] || keys["ArrowRight"]) moveX += speed;
         
-        // Boundary constraints
-        this.x = Math.max(0, Math.min(canvasWidth - this.size, this.x));
-        this.y = Math.max(0, Math.min(canvasHeight - this.size, this.y));
-        
-        // Update invincibility state
-        this.updateInvincibility();
-    }
-    
-    canMove() {
-        return gameState.gameActive && !gameState.paused && this.movementEnabled && !gameState.onTitleScreen;
-    }
-    
-    updateInvincibility() {
-        gameState.playerInvincible = performance.now() < this.invincibilityEndTime;
-    }
-    
-    takeDamage(damageSource) {
-        const currentTime = performance.now();
-        
-        // Check cooldown and invincibility
-        if (currentTime - this.lastHitTime < CONFIG.PLAYER.HIT_COOLDOWN || gameState.playerInvincible) {
-            return false;
+        if (joypadVector && (Math.abs(joypadVector.x) > 0.1 || Math.abs(joypadVector.y) > 0.1)) {
+            moveX = joypadVector.x * speed * 1.5;
+            moveY = joypadVector.y * speed * 1.5;
         }
         
-        // Apply damage
-        this.health = Math.max(0, this.health - CONFIG.PLAYER.HIT_DAMAGE);
-        this.lastHitTime = currentTime;
-        this.invincibilityEndTime = currentTime + CONFIG.PLAYER.INVINCIBILITY_DURATION;
+        this.x += moveX;
+        this.y += moveY;
         
-        // Play hit sound
-        audioManager.playHitSound();
-        
-        // Apply knockback
-        this.applyKnockback(damageSource);
-        
-        // Check for game over
-        if (this.health <= 0) {
-            gameState.endGame();
-            audioManager.stopAllMusic();
-        }
-        
-        return true;
+        this.x = Math.max(0, Math.min(canvas.width - this.size, this.x));
+        this.y = Math.max(0, Math.min(canvas.height - this.size, this.y));
     }
     
-    applyKnockback(damageSource) {
-        const playerCenterX = this.x + this.size / 2;
-        const playerCenterY = this.y + this.size / 2;
-        const entityCenterX = damageSource.x + damageSource.size / 2;
-        const entityCenterY = damageSource.y + damageSource.size / 2;
-        
-        const deltaX = playerCenterX - entityCenterX;
-        const deltaY = playerCenterY - entityCenterY;
-        const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY) || 1;
-        
-        const knockbackX = (deltaX / distance) * CONFIG.PLAYER.PUSH_FORCE;
-        const knockbackY = (deltaY / distance) * CONFIG.PLAYER.PUSH_FORCE;
-        
-        this.x += knockbackX;
-        this.y += knockbackY;
+    takeDamage(fromEntity) {
+        const now = performance.now();
+        if (now - this.lastHit > CONFIG.PLAYER.HIT_COOLDOWN) {
+            this.hp = Math.max(0, this.hp - CONFIG.PLAYER.HIT_DAMAGE);
+            this.lastHit = now;
+            
+            audioManager.playHit();
+            
+            const dx = (this.x + this.size/2) - (fromEntity.x + fromEntity.size/2);
+            const dy = (this.y + this.size/2) - (fromEntity.y + fromEntity.size/2);
+            const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+            
+            this.x += (dx/dist) * CONFIG.PLAYER.PUSH_FORCE;
+            this.y += (dy/dist) * CONFIG.PLAYER.PUSH_FORCE;
+            
+            if (this.hp <= 0) {
+                gameState.gameOver = true;
+                audioManager.bgm.pause();
+                audioManager.windSnd.pause();
+                audioManager.coreDreamMusic.pause();
+                audioManager.stopHitSound();
+            }
+            
+            return true;
+        }
+        return false;
     }
     
     setMovementEnabled(enabled) {
         this.movementEnabled = enabled;
     }
-    
-    getCenter() {
-        return {
-            x: this.x + this.size / 2,
-            y: this.y + this.size / 2
-        };
-    }
 }
 
-/**
- * Entity Management System
- * Handles game entities (enemies, eyes, environmental effects)
- */
-class EntityManager {
-    constructor() {
-        this.entities = [];
-        this.eyes = [];
-        this.fogs = [];
-        this.particles = [];
-        this.eyeSpawnTimer = 0;
-        this.resetEyeSpawnTimer();
-    }
-    
-    reset() {
-        this.entities = [];
-        this.eyes = [];
-        this.fogs = [];
-        this.particles = [];
-        this.resetEyeSpawnTimer();
-    }
-    
-    resetEyeSpawnTimer() {
-        this.eyeSpawnTimer = CONFIG.EYES.SPAWN_TIMER.MIN + 
-            Math.random() * (CONFIG.EYES.SPAWN_TIMER.MAX - CONFIG.EYES.SPAWN_TIMER.MIN);
-    }
-    
-    initializeEnvironment() {
-        // Initialize fog
-        for (let i = 0; i < CONFIG.FOG.COUNT; i++) {
-            this.spawnFog();
-        }
-        
-        // Initialize particles
-        for (let i = 0; i < CONFIG.PARTICLES.COUNT; i++) {
-            this.spawnParticle();
-        }
-        
-        // Initialize entities
-        for (let i = 0; i < CONFIG.ENTITIES.COUNT.MIN; i++) {
-            this.spawnEntity();
-        }
-    }
-    
-    spawnFog() {
-        if (this.fogs.length >= CONFIG.PERFORMANCE.MAX_ENTITIES) return;
-        
-        this.fogs.push({
-            x: Math.random() * canvas.width,
-            y: Math.random() * canvas.height,
-            radius: Math.random() * (CONFIG.FOG.RADIUS.MAX - CONFIG.FOG.RADIUS.MIN) + CONFIG.FOG.RADIUS.MIN,
-            speed: Math.random() * (CONFIG.FOG.SPEED.MAX - CONFIG.FOG.SPEED.MIN) + CONFIG.FOG.SPEED.MIN,
-            alpha: Math.random() * (CONFIG.FOG.ALPHA.MAX - CONFIG.FOG.ALPHA.MIN) + CONFIG.FOG.ALPHA.MIN
-        });
-    }
-    
-    spawnParticle() {
-        if (this.particles.length >= CONFIG.PERFORMANCE.MAX_PARTICLES) return;
-        
-        this.particles.push({
-            x: Math.random() * canvas.width,
-            y: Math.random() * canvas.height,
-            size: Math.random() * (CONFIG.PARTICLES.SIZE.MAX - CONFIG.PARTICLES.SIZE.MIN) + CONFIG.PARTICLES.SIZE.MIN,
-            speedX: Math.random() * (CONFIG.PARTICLES.SPEED_X.MAX - CONFIG.PARTICLES.SPEED_X.MIN) + CONFIG.PARTICLES.SPEED_X.MIN,
-            speedY: Math.random() * (CONFIG.PARTICLES.SPEED_Y.MAX - CONFIG.PARTICLES.SPEED_Y.MIN) + CONFIG.PARTICLES.SPEED_Y.MIN,
-            alpha: Math.random() * (CONFIG.PARTICLES.ALPHA.MAX - CONFIG.PARTICLES.ALPHA.MIN) + CONFIG.PARTICLES.ALPHA.MIN
-        });
-    }
-    
-    spawnEye() {
-        if (this.eyes.length >= CONFIG.PERFORMANCE.MAX_EYES) return;
-        
-        const size = Math.random() * (CONFIG.EYES.SIZE.MAX - CONFIG.EYES.SIZE.MIN) + CONFIG.EYES.SIZE.MIN;
-        this.eyes.push({
-            x: Math.random() * canvas.width,
-            y: Math.random() * canvas.height * 0.45,
-            size: size,
-            alpha: 0,
-            openSpeed: Math.random() * (CONFIG.EYES.OPEN_SPEED.MAX - CONFIG.EYES.OPEN_SPEED.MIN) + CONFIG.EYES.OPEN_SPEED.MIN,
-            createdTime: performance.now(),
-            lifetime: (Math.random() * (CONFIG.EYES.TTL.MAX - CONFIG.EYES.TTL.MIN) + CONFIG.EYES.TTL.MIN) * 1000,
-            fadingOut: false
-        });
-    }
-    
-    spawnEntity() {
-        if (this.entities.length >= CONFIG.PERFORMANCE.MAX_ENTITIES) return;
-        
-        const size = Math.random() * (CONFIG.ENTITIES.SIZE.MAX - CONFIG.ENTITIES.SIZE.MIN) + CONFIG.ENTITIES.SIZE.MIN;
-        this.entities.push({
-            x: Math.random() * (canvas.width - size),
-            y: Math.random() * (canvas.height - size),
-            size: size,
-            velocityX: (Math.random() - 0.5) * CONFIG.ENTITIES.SPEED,
-            velocityY: (Math.random() - 0.5) * CONFIG.ENTITIES.SPEED,
-            createdTime: performance.now()
-        });
-    }
-    
-    update(deltaTime, player) {
-        if (gameState.paused || !gameState.gameActive) return;
-        
-        this.updateFog(deltaTime);
-        this.updateParticles(deltaTime);
-        this.updateEyes(deltaTime);
-        this.updateEntities(deltaTime, player);
-        this.handleSpawning(deltaTime);
-    }
-    
-    updateFog(deltaTime) {
-        const normalizedDelta = deltaTime / 16;
-        
-        this.fogs.forEach(fog => {
-            fog.x += fog.speed * normalizedDelta;
-            if (fog.x - fog.radius > canvas.width) {
-                fog.x = -fog.radius;
-                fog.y = Math.random() * canvas.height;
-            }
-        });
-        
-        // Spawn new fog if needed
-        if (this.fogs.length < CONFIG.FOG.MAX && Math.random() < 0.01) {
-            this.spawnFog();
-        }
-    }
-    
-    updateParticles(deltaTime) {
-        const normalizedDelta = deltaTime / 16;
-        
-        // Update existing particles
-        this.particles.forEach(particle => {
-            particle.x += particle.speedX * normalizedDelta;
-            particle.y += particle.speedY * normalizedDelta;
-            particle.alpha -= 0.002 * normalizedDelta;
-        });
-        
-        // Remove dead particles
-        this.particles = this.particles.filter(particle => particle.alpha > 0);
-        
-        // Spawn new particles
-        if (this.particles.length < CONFIG.PARTICLES.MAX && Math.random() < CONFIG.PARTICLES.SPAWN_RATE) {
-            this.spawnParticle();
-        }
-    }
-    
-    updateEyes(deltaTime) {
-        const currentTime = performance.now();
-        const normalizedDelta = deltaTime / 16;
-        
-        for (let i = this.eyes.length - 1; i >= 0; i--) {
-            const eye = this.eyes[i];
-            const age = currentTime - eye.createdTime;
-            
-            // Handle eye opening
-            if (!eye.fadingOut && eye.alpha < CONFIG.EYES.ALPHA_MAX) {
-                eye.alpha = Math.min(CONFIG.EYES.ALPHA_MAX, eye.alpha + eye.openSpeed * normalizedDelta);
-            }
-            
-            // Start fading out if lifetime exceeded
-            if (!eye.fadingOut && age > eye.lifetime) {
-                eye.fadingOut = true;
-            }
-            
-            // Handle fading out
-            if (eye.fadingOut) {
-                eye.alpha -= 0.008 * normalizedDelta;
-                if (eye.alpha <= 0) {
-                    this.eyes.splice(i, 1);
-                    continue;
-                }
-            }
-            
-            // Subtle movement
-            eye.x += (Math.random() - 0.5) * 0.15 * normalizedDelta;
-            eye.y += (Math.random() - 0.5) * 0.12 * normalizedDelta;
-        }
-    }
-    
-    updateEntities(deltaTime, player) {
-        const normalizedDelta = deltaTime / 16;
-        
-        this.entities.forEach(entity => {
-            // Movement
-            entity.x += entity.velocityX * normalizedDelta;
-            entity.y += entity.velocityY * normalizedDelta;
-            
-            // Boundary collision
-            if (entity.x < 0 || entity.x > canvas.width - entity.size) {
-                entity.velocityX *= -1;
-                entity.x = Math.max(0, Math.min(canvas.width - entity.size, entity.x));
-            }
-            if (entity.y < 0 || entity.y > canvas.height - entity.size) {
-                entity.velocityY *= -1;
-                entity.y = Math.max(0, Math.min(canvas.height - entity.size, entity.y));
-            }
-            
-            // Player collision detection
-            this.checkPlayerCollision(entity, player);
-        });
-        
-        // Spawn new entities if needed
-        if (this.entities.length < CONFIG.ENTITIES.COUNT.MIN && Math.random() < CONFIG.ENTITIES.SPAWN_RATE) {
-            this.spawnEntity();
-        }
-    }
-    
-    checkPlayerCollision(entity, player) {
-        const playerCenter = player.getCenter();
-        const entityCenter = {
-            x: entity.x + entity.size / 2,
-            y: entity.y + entity.size / 2
-        };
-        
-        const deltaX = playerCenter.x - entityCenter.x;
-        const deltaY = playerCenter.y - entityCenter.y;
-        const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-        const minDistance = (player.size / 2) + (entity.size / 2);
-        
-        if (distance < minDistance) {
-            player.takeDamage(entity);
-        }
-    }
-    
-    handleSpawning(deltaTime) {
-        // Eye spawning
-        this.eyeSpawnTimer -= deltaTime;
-        if (this.eyeSpawnTimer <= 0) {
-            if (Math.random() < CONFIG.EYES.SPAWN_CHANCE) {
-                this.spawnEye();
-            }
-            this.resetEyeSpawnTimer();
-        }
-    }
-}
+// ========== INITIALIZATION ==========
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const loadingScreen = document.getElementById("loadingScreen");
+const gameState = new GameState();
+const audioManager = new AudioManager();
+const player = new Player();
+const joypad = new VirtualJoypad();
 
-/**
- * Rendering System
- * Handles all drawing operations and visual effects
- */
-class Renderer {
-    constructor(context) {
-        this.ctx = context;
-        this.glitchSoundPlayed = false;
-        this.lastGlitchTime = 0;
-    }
-    
-    clear() {
-        this.ctx.fillStyle = '#000000';
-        this.ctx.fillRect(0, 0, canvas.width, canvas.height);
-    }
-    
-    renderGameWorld(entityManager, player, playerImage, entityImage) {
-        this.renderFog(entityManager.fogs);
-        this.renderParticles(entityManager.particles);
-        this.renderEyes(entityManager.eyes, player);
-        this.renderEntities(entityManager.entities, entityImage);
-        this.renderLighting(player);
-        this.renderPlayer(player, playerImage);
-    }
-    
-    renderFog(fogs) {
-        fogs.forEach(fog => {
-            const gradient = this.ctx.createRadialGradient(
-                fog.x, fog.y, 0,
-                fog.x, fog.y, fog.radius
-            );
-            gradient.addColorStop(0, `rgba(200, 200, 255, ${fog.alpha})`);
-            gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
-            
-            this.ctx.fillStyle = gradient;
-            this.ctx.beginPath();
-            this.ctx.arc(fog.x, fog.y, fog.radius, 0, Math.PI * 2);
-            this.ctx.fill();
-        });
-    }
-    
-    renderParticles(particles) {
-        particles.forEach(particle => {
-            this.ctx.fillStyle = `rgba(170, 170, 220, ${particle.alpha})`;
-            this.ctx.fillRect(particle.x, particle.y, particle.size, particle.size);
-        });
-    }
-    
-    renderEyes(eyes, player) {
-        const playerCenter = player.getCenter();
-        
-        eyes.forEach(eye => {
-            if (eye.alpha <= 0) return;
-            
-            this.ctx.save();
-            
-            // Draw eye outline
-            this.ctx.globalAlpha = eye.alpha * 0.85;
-            this.ctx.translate(eye.x, eye.y);
-            this.ctx.scale(1.2, 0.55);
-            this.ctx.beginPath();
-            this.ctx.arc(0, 0, eye.size, 0, Math.PI * 2);
-            this.ctx.restore();
-            
-            this.ctx.strokeStyle = `rgba(255, 255, 255, ${eye.alpha * 0.85})`;
-            this.ctx.lineWidth = 2;
-            this.ctx.stroke();
-            
-            // Calculate pupil position (look at player)
-            const deltaX = playerCenter.x - eye.x;
-            const deltaY = playerCenter.y - eye.y;
-            const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY) || 1;
-            const maxOffset = Math.max(3, eye.size * 0.18);
-            const offsetX = (deltaX / distance) * Math.min(maxOffset, distance * 0.15);
-            const offsetY = (deltaY / distance) * Math.min(maxOffset, distance * 0.15);
-            const pupilSize = Math.max(3, eye.size * 0.16);
-            
-            // Draw pupil
-            this.ctx.beginPath();
-            this.ctx.fillStyle = `rgba(255, 255, 255, ${Math.min(1, eye.alpha * 1.1)})`;
-            this.ctx.arc(eye.x + offsetX, eye.y + offsetY, pupilSize, 0, Math.PI * 2);
-            this.ctx.fill();
-            
-            // Draw pupil center
-            this.ctx.beginPath();
-            this.ctx.fillStyle = `rgba(30, 30, 30, ${0.18 * eye.alpha})`;
-            this.ctx.arc(eye.x + offsetX, eye.y + offsetY, Math.max(1, pupilSize * 0.5), 0, Math.PI * 2);
-            this.ctx.fill();
-        });
-    }
-    
-    renderEntities(entities, entityImage) {
-        entities.forEach(entity => {
-            if (entityImage.complete && entityImage.naturalWidth > 0) {
-                this.ctx.drawImage(entityImage, entity.x, entity.y, entity.size, entity.size);
-            } else {
-                // Fallback rendering
-                this.ctx.fillStyle = 'rgba(30, 30, 30, 0.95)';
-                this.ctx.beginPath();
-                this.ctx.ellipse(
-                    entity.x + entity.size / 2,
-                    entity.y + entity.size / 2,
-                    entity.size / 1.2,
-                    entity.size * 0.9,
-                    0, 0, Math.PI * 2
-                );
-                this.ctx.fill();
-            }
-        });
-    }
-    
-    renderLighting(player) {
-        const radius = Math.max(120, Math.min(canvas.width, canvas.height) * 0.25);
-        const playerCenter = player.getCenter();
-        
-        const gradient = this.ctx.createRadialGradient(
-            playerCenter.x, playerCenter.y, 0,
-            playerCenter.x, playerCenter.y, radius
-        );
-        gradient.addColorStop(0, 'rgba(255, 255, 255, 0)');
-        gradient.addColorStop(0.5, 'rgba(0, 0, 0, 0.64)');
-        gradient.addColorStop(1, 'rgba(0, 0, 0, 1)');
-        
-        this.ctx.fillStyle = gradient;
-        this.ctx.fillRect(0, 0, canvas.width, canvas.height);
-    }
-    
-    renderPlayer(player, playerImage) {
-        if (playerImage.complete && playerImage.naturalWidth > 0) {
-            this.ctx.imageSmoothingEnabled = false;
-            this.ctx.drawImage(playerImage, player.x, player.y, player.size, player.size);
-        } else {
-            // Fallback rendering
-            this.ctx.fillStyle = gameState.playerInvincible ? 'rgba(255, 255, 255, 0.5)' : '#ffffff';
-            this.ctx.fillRect(player.x, player.y, player.size, player.size);
-        }
-    }
-    
-    renderHUD(player) {
-        this.renderTimer();
-        this.renderHealthBar(player);
-        this.renderWarningIndicator(player);
-    }
-    
-    renderTimer() {
-        if (!gameState.gameActive) return;
-        
-        const elapsed = performance.now() - gameState.gameStartTime;
-        const formattedTime = this.formatTime(elapsed);
-        
-        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-        this.ctx.font = '14px "Press Start 2P", monospace';
-        this.ctx.fillText(formattedTime, canvas.width / 2 - 36, 24);
-    }
-    
-    renderHealthBar(player) {
-        const width = 200;
-        const height = 14;
-        const x = 16;
-        const y = canvas.height - (height + 16);
-        
-        // Background
-        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
-        this.ctx.fillRect(x, y, width, height);
-        
-        // Health fill
-        const healthPercent = player.health / CONFIG.PLAYER.HP_MAX;
-        const healthWidth = healthPercent * width;
-        
-        // Color based on health (green -> yellow -> red)
-        let r, g;
-        if (healthPercent > 0.5) {
-            r = Math.floor(255 * (1 - healthPercent) * 2);
-            g = 200;
-        } else {
-            r = 200;
-            g = Math.floor(255 * healthPercent * 2);
-        }
-        
-        this.ctx.fillStyle = `rgba(${r}, ${g}, 80, 0.95)`;
-        this.ctx.fillRect(x, y, healthWidth, height);
-        
-        // Border
-        this.ctx.strokeStyle = '#555555';
-        this.ctx.lineWidth = 1;
-        this.ctx.strokeRect(x, y, width, height);
-        
-        // Text
-        this.ctx.fillStyle = '#ffffff';
-        this.ctx.font = '8px "Press Start 2P", monospace';
-        this.ctx.fillText(`HP:${Math.round(player.health)}`, x + 6, y + height - 2);
-    }
-    
-    renderWarningIndicator(player) {
-        const playerCenter = player.getCenter();
-        const warningDistance = 120;
-        
-        // Check if any entity is too close
-        const isWarning = entityManager.entities.some(entity => {
-            const entityCenter = {
-                x: entity.x + entity.size / 2,
-                y: entity.y + entity.size / 2
-            };
-            const deltaX = playerCenter.x - entityCenter.x;
-            const deltaY = playerCenter.y - entityCenter.y;
-            return Math.sqrt(deltaX * deltaX + deltaY * deltaY) < warningDistance;
-        });
-        
-        if (isWarning) {
-            const currentTime = performance.now();
-            // Blink effect (every 300ms)
-            if (Math.floor(currentTime / 300) % 2 === 0) {
-                this.ctx.fillStyle = 'rgba(255, 60, 60, 0.95)';
-                this.ctx.font = '28px "Press Start 2P", monospace';
-                this.ctx.fillText('!', canvas.width - 44, 34);
-            }
-        }
-    }
-    
-    renderTitleScreen() {
-        // Solid black background
-        this.ctx.fillStyle = '#000000';
-        this.ctx.fillRect(0, 0, canvas.width, canvas.height);
-        
-        // Game title
-        this.ctx.fillStyle = '#ffffff';
-        this.ctx.font = '34px "Press Start 2P", monospace';
-        const title = 'DREAM HORROR';
-        const titleWidth = this.ctx.measureText(title).width;
-        this.ctx.fillText(title, (canvas.width - titleWidth) / 2, canvas.height * 0.33);
-        
-        // Version number
-        this.ctx.font = '12px "Press Start 2P", monospace';
-        const version = '1.0.0';
-        const versionWidth = this.ctx.measureText(version).width;
-        this.ctx.fillText(version, (canvas.width - versionWidth) / 2, canvas.height * 0.33 + 40);
-        
-        // Instructions
-        this.ctx.font = '12px "Press Start 2P", monospace';
-        let instructionText, instructionWidth;
-        
-        if (!gameState.titleAudioStarted) {
-            instructionText = 'Click to enable title audio';
-            instructionWidth = this.ctx.measureText(instructionText).width;
-            this.ctx.fillText(instructionText, (canvas.width - instructionWidth) / 2, canvas.height * 0.45);
-        } else {
-            instructionText = 'Press Enter or Click to Start';
-            instructionWidth = this.ctx.measureText(instructionText).width;
-            this.ctx.fillText(instructionText, (canvas.width - instructionWidth) / 2, canvas.height * 0.45);
-        }
-        
-        // Controls hint
-        this.ctx.font = '10px "Press Start 2P", monospace';
-        const controls = 'WASD / Arrow keys to move';
-        const controlsWidth = this.ctx.measureText(controls).width;
-        this.ctx.fillText(controls, (canvas.width - controlsWidth) / 2, canvas.height * 0.5);
-    }
-    
-    renderGameOver() {
-        // Semi-transparent overlay
-        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-        this.ctx.fillRect(0, 0, canvas.width, canvas.height);
-        
-        // Game over text
-        this.ctx.fillStyle = '#ffffff';
-        this.ctx.font = '28px "Press Start 2P", monospace';
-        const gameOverText = 'GAME OVER';
-        const textWidth = this.ctx.measureText(gameOverText).width;
-        this.ctx.fillText(gameOverText, (canvas.width - textWidth) / 2, canvas.height / 2 - 20);
-        
-        // Restart instruction
-        this.ctx.font = '12px "Press Start 2P", monospace';
-        const restartText = 'Press R to Restart';
-        const restartWidth = this.ctx.measureText(restartText).width;
-        this.ctx.fillText(restartText, (canvas.width - restartWidth) / 2, canvas.height / 2 + 10);
-    }
-    
-    renderGlitchEffect(player) {
-        if (player.health >= 30) return;
-        
-        const currentTime = performance.now();
-        
-        // Play glitch sound (once per glitch session)
-        if (!this.glitchSoundPlayed || currentTime - this.lastGlitchTime > 2000) {
-            audioManager.play('glitch');
-            this.glitchSoundPlayed = true;
-            this.lastGlitchTime = currentTime;
-            
-            // Reset glitch sound after delay
-            setTimeout(() => {
-                this.glitchSoundPlayed = false;
-            }, 2000);
-        }
-        
-        const intensity = 0.22 * (1 - player.health / 30);
-        
-        // Color shift rectangles
-        for (let i = 0; i < 10; i++) {
-            const width = Math.random() * canvas.width * 0.6;
-            const height = 4 + Math.random() * 10;
-            const x = Math.random() * canvas.width;
-            const y = Math.random() * canvas.height;
-            
-            this.ctx.fillStyle = `rgba(${180 + Math.random() * 70 | 0}, 40, 60, ${intensity * 0.4})`;
-            this.ctx.fillRect(x, y, width, height);
-        }
-        
-        // Scan lines
-        this.ctx.globalAlpha = intensity * 0.7;
-        for (let yPos = 0; yPos < canvas.height; yPos += 6) {
-            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.03)';
-            this.ctx.fillRect(0, yPos, canvas.width, 2);
-        }
-        this.ctx.globalAlpha = 1;
-    }
-    
-    formatTime(milliseconds) {
-        const totalSeconds = Math.floor(milliseconds / 1000);
-        const minutes = Math.floor(totalSeconds / 60);
-        const seconds = totalSeconds % 60;
-        
-        const pad = (number) => number.toString().padStart(2, '0');
-        return `${pad(minutes)} : ${pad(seconds)}`;
-    }
-}
+// Music change system
+let musicChanged = false;
+const musicChangeTime = 600000;
 
-/**
- * Input Management System
- * Handles keyboard and mouse input
- */
-class InputManager {
-    constructor() {
-        this.keys = {};
-        this.setupEventListeners();
-    }
-    
-    setupEventListeners() {
-        // Keyboard events
-        document.addEventListener('keydown', (event) => {
-            this.keys[event.key] = true;
-            this.handleGameControls(event);
-            
-            // Prevent default for game controls
-            if (['w', 'a', 's', 'd', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(event.key)) {
-                event.preventDefault();
-            }
-        });
-        
-        document.addEventListener('keyup', (event) => {
-            this.keys[event.key] = false;
-            
-            // Prevent default for game controls
-            if (['w', 'a', 's', 'd', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(event.key)) {
-                event.preventDefault();
-            }
-        });
-        
-        // Mouse events
-        canvas.addEventListener('click', (event) => {
-            this.handleMouseClick(event);
-        });
-        
-        // Window blur (pause game when tab loses focus)
-        window.addEventListener('blur', () => {
-            if (gameState.gameActive && !gameState.paused) {
-                this.togglePause();
-            }
-        });
-    }
-    
-    handleGameControls(event) {
-        // Escape key - toggle settings
-        if (event.key === 'Escape') {
-            if (settingsModal.classList.contains('hidden')) {
-                openSettings();
-            } else {
-                closeSettings();
-            }
-            event.preventDefault();
-        }
-        
-        // Enter or Space - start game from title screen
-        if ((event.key === 'Enter' || event.key === ' ') && gameState.onTitleScreen) {
-            if (gameState.titleAudioStarted) {
-                startGame();
-            } else {
-                startTitleAudio();
-                startGame();
-            }
-            event.preventDefault();
-        }
-        
-        // R key - restart game
-        if ((event.key === 'r' || event.key === 'R') && gameState.gameOver) {
-            restartGame();
-            event.preventDefault();
-        }
-        
-        // P key - pause/resume game
-        if ((event.key === 'p' || event.key === 'P') && gameState.gameActive) {
-            this.togglePause();
-            event.preventDefault();
-        }
-    }
-    
-    handleMouseClick(event) {
-        if (gameState.onTitleScreen) {
-            if (!gameState.titleAudioStarted) {
-                startTitleAudio();
-            } else {
-                startGame();
-            }
-        }
-    }
-    
-    togglePause() {
-        if (!gameState.gameActive) return;
-        
-        gameState.paused = !gameState.paused;
-        pauseResumeBtn.textContent = gameState.paused ? 'Resume Game' : 'Pause Game';
-        
-        if (gameState.paused) {
-            audioManager.pause('bgm');
-            audioManager.pause('wind');
-            audioManager.pause('coreDream');
-            player.setMovementEnabled(false);
-        } else {
-            player.setMovementEnabled(true);
-            if (gameState.audioEnabled) {
-                audioManager.playGameMusic();
-            }
-        }
-    }
-    
-    reset() {
-        this.keys = {};
-    }
-}
+// UI Elements
+const settingsBtn = document.getElementById("settingsBtn");
+const settingsModal = document.getElementById("settingsModal");
+const backMenuBtn = document.getElementById("backMenuBtn");
+const exitBtn = document.getElementById("exitBtn");
+const audioToggleBtn = document.getElementById("audioToggleBtn");
+const pauseResumeBtn = document.getElementById("pauseResumeBtn");
 
-// Global variables
-let canvas, ctx;
-let gameState, audioManager, player, entityManager, renderer, inputManager;
-let playerImage, entityImage;
+// Game objects
+let keys = {};
+let entities = [];
+let eyes = [];
+let fogs = [];
+let particles = [];
+let eyeSpawnTimer = CONFIG.EYES.SPAWN_TIMER.MIN + Math.random() * (CONFIG.EYES.SPAWN_TIMER.MAX - CONFIG.EYES.SPAWN_TIMER.MIN);
+
+// ========== ASSET LOADING ==========
 let assetsLoaded = 0;
-const totalAssets = 8; // 2 images + 6 audio files
+const totalAssets = 7;
 
-// DOM elements
-let loadingScreen, loadingProgress;
-let settingsBtn, settingsModal, backMenuBtn, exitBtn, audioToggleBtn, pauseResumeBtn;
-
-/**
- * Main Game Initialization
- */
-async function initializeGame() {
-    try {
-        // Initialize DOM references
-        initializeDOMElements();
-        
-        // Set up canvas
-        initializeCanvas();
-        
-        // Initialize game systems
-        await initializeGameSystems();
-        
-        // Set up UI event listeners
-        initializeUIEvents();
-        
-        // Start game loop
-        requestAnimationFrame(gameLoop);
-        
-        console.log('Dream Horror RPG initialized successfully');
-    } catch (error) {
-        console.error('Failed to initialize game:', error);
-        showErrorScreen('Failed to load game. Please refresh the page.');
-    }
-}
-
-function initializeDOMElements() {
-    canvas = document.getElementById('gameCanvas');
-    ctx = canvas.getContext('2d');
-    
-    loadingScreen = document.getElementById('loadingScreen');
-    loadingProgress = document.getElementById('loadingProgress');
-    
-    settingsBtn = document.getElementById('settingsBtn');
-    settingsModal = document.getElementById('settingsModal');
-    backMenuBtn = document.getElementById('backMenuBtn');
-    exitBtn = document.getElementById('exitBtn');
-    audioToggleBtn = document.getElementById('audioToggleBtn');
-    pauseResumeBtn = document.getElementById('pauseResumeBtn');
-}
-
-function initializeCanvas() {
-    function resizeCanvas() {
-        const displayWidth = Math.floor(window.innerWidth);
-        const displayHeight = Math.floor(window.innerHeight);
-        
-        if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
-            canvas.width = displayWidth;
-            canvas.height = displayHeight;
-            
-            if (player) {
-                player.initializePosition(displayWidth, displayHeight);
-            }
-        }
-    }
-    
-    resizeCanvas();
-    window.addEventListener('resize', resizeCanvas);
-}
-
-async function initializeGameSystems() {
-    // Initialize core systems
-    gameState = new GameState();
-    audioManager = new AudioManager();
-    player = new Player();
-    entityManager = new EntityManager();
-    renderer = new Renderer(ctx);
-    inputManager = new InputManager();
-    
-    // Load assets
-    await loadAssets();
-    
-    // Initialize audio
-    await audioManager.initialize();
-    
-    // Initialize player position
-    player.initializePosition(canvas.width, canvas.height);
-    
-    // Initialize game environment
-    entityManager.initializeEnvironment();
-    
-    // Hide loading screen
-    setTimeout(() => {
+function assetLoaded() {
+    assetsLoaded++;
+    if (assetsLoaded >= totalAssets) {
         loadingScreen.classList.add('hidden');
-    }, 500);
+    }
 }
 
-function initializeUIEvents() {
-    // Settings button
-    settingsBtn.addEventListener('click', openSettings);
+function handleAssetError(assetName) {
+    assetLoaded();
+}
+
+const playerImg = new Image();
+playerImg.src = "assets/player.png";
+playerImg.addEventListener('load', assetLoaded);
+playerImg.addEventListener('error', () => handleAssetError('player image'));
+
+const entityImg = new Image();
+entityImg.src = "assets/entity.png";
+entityImg.addEventListener('load', assetLoaded);
+entityImg.addEventListener('error', () => handleAssetError('entity image'));
+
+// Audio loading events
+audioManager.titleMusic.addEventListener('canplaythrough', assetLoaded);
+audioManager.bgm.addEventListener('canplaythrough', assetLoaded);
+audioManager.windSnd.addEventListener('canplaythrough', assetLoaded);
+audioManager.coreDreamMusic.addEventListener('canplaythrough', assetLoaded);
+audioManager.hitSound.addEventListener('canplaythrough', assetLoaded);
+audioManager.glitchSound.addEventListener('canplaythrough', assetLoaded);
+
+audioManager.titleMusic.addEventListener('error', () => handleAssetError('title music'));
+audioManager.bgm.addEventListener('error', () => handleAssetError('bgm'));
+audioManager.windSnd.addEventListener('error', () => handleAssetError('wind sound'));
+audioManager.coreDreamMusic.addEventListener('error', () => handleAssetError('core dream music'));
+audioManager.hitSound.addEventListener('error', () => handleAssetError('hit sound'));
+audioManager.glitchSound.addEventListener('error', () => handleAssetError('glitch sound'));
+
+// ========== CANVAS SETUP ==========
+function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    if (gameState.gameStarted && !gameState.gameOver) {
+        player.x = Math.max(0, Math.min(canvas.width - player.size, canvas.width / 2 - player.size / 2));
+        player.y = Math.max(0, Math.min(canvas.height - player.size, canvas.height / 2 - player.size / 2));
+    }
+}
+window.addEventListener("resize", resizeCanvas);
+resizeCanvas();
+
+// ========== INPUT HANDLING ==========
+function initializeInputHandling() {
+    keys = {};
     
-    // Settings modal
-    settingsModal.addEventListener('click', (event) => {
-        if (event.target === settingsModal) {
-            closeSettings();
+    document.addEventListener("keydown", e => {
+        keys[e.key] = true;
+        
+        if (['w', 'a', 's', 'd', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) {
+            e.preventDefault();
         }
     });
     
-    // Settings actions
-    backMenuBtn.addEventListener('click', returnToMenu);
-    exitBtn.addEventListener('click', exitGame);
-    audioToggleBtn.addEventListener('click', toggleAudio);
-    pauseResumeBtn.addEventListener('click', inputManager.togglePause.bind(inputManager));
-}
-
-async function loadAssets() {
-    return new Promise((resolve) => {
-        const assets = [
-            { type: 'image', src: 'assets/player.png', onLoad: (img) => playerImage = img },
-            { type: 'image', src: 'assets/entity.png', onLoad: (img) => entityImage = img }
-        ];
+    document.addEventListener("keyup", e => {
+        keys[e.key] = false;
         
-        let loadedCount = 0;
-        
-        assets.forEach(asset => {
-            if (asset.type === 'image') {
-                const img = new Image();
-                img.onload = () => {
-                    asset.onLoad(img);
-                    loadedCount++;
-                    updateLoadingProgress(loadedCount, assets.length);
-                    if (loadedCount === assets.length) resolve();
-                };
-                img.onerror = () => {
-                    console.warn(`Failed to load image: ${asset.src}`);
-                    loadedCount++;
-                    updateLoadingProgress(loadedCount, assets.length);
-                    if (loadedCount === assets.length) resolve();
-                };
-                img.src = asset.src;
-            }
-        });
-        
-        // Audio files are loaded by AudioManager
-        updateLoadingProgress(2, totalAssets); // Images are 2 of total assets
+        if (['w', 'a', 's', 'd', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) {
+            e.preventDefault();
+        }
     });
 }
 
-function updateLoadingProgress(loaded, total) {
-    const progress = Math.floor((loaded / total) * 100);
-    if (loadingProgress) {
-        loadingProgress.textContent = `${progress}%`;
-    }
-}
+initializeInputHandling();
 
-/**
- * Game State Management Functions
- */
-function startTitleAudio() {
-    gameState.titleAudioStarted = true;
-    if (gameState.audioEnabled) {
-        audioManager.play('title');
-    }
-}
-
-function startGame() {
-    gameState.startGame();
-    settingsBtn.classList.remove('hidden');
-    
-    if (gameState.audioEnabled) {
-        audioManager.stop('title');
-        audioManager.playGameMusic();
-    }
-    
-    player.setMovementEnabled(true);
-    inputManager.reset();
-}
-
-function restartGame() {
-    gameState.reset();
-    player.reset();
-    player.initializePosition(canvas.width, canvas.height);
-    entityManager.reset();
-    entityManager.initializeEnvironment();
-    inputManager.reset();
-    
-    settingsBtn.classList.remove('hidden');
-    
-    startGame();
-}
-
-function returnToMenu() {
-    audioManager.stopAllMusic();
-    audioManager.stopHitSound();
-    
-    gameState.reset();
-    player.reset();
-    player.initializePosition(canvas.width, canvas.height);
-    entityManager.reset();
-    entityManager.initializeEnvironment();
-    inputManager.reset();
-    
-    settingsBtn.classList.add('hidden');
-    closeSettings();
-    
-    if (gameState.audioEnabled) {
-        audioManager.play('title');
-    }
-}
-
-function exitGame() {
-    try {
-        window.close();
-    } catch (error) {
-        window.location.href = 'about:blank';
-    }
-}
-
-function toggleAudio() {
-    gameState.audioEnabled = !gameState.audioEnabled;
-    audioToggleBtn.textContent = `Audio: ${gameState.audioEnabled ? 'ON' : 'OFF'}`;
-    
-    if (gameState.audioEnabled) {
-        if (gameState.onTitleScreen && gameState.titleAudioStarted) {
-            audioManager.play('title');
-        } else if (gameState.gameActive) {
-            audioManager.playGameMusic();
-        }
-    } else {
-        audioManager.stopAllMusic();
-    }
-}
-
-/**
- * Settings Modal Functions
- */
+// ========== SETTINGS MODAL ==========
+settingsBtn.addEventListener("click", openSettings);
 function openSettings() {
-    settingsModal.classList.remove('hidden');
-    settingsModal.setAttribute('aria-hidden', 'false');
-    audioToggleBtn.textContent = `Audio: ${gameState.audioEnabled ? 'ON' : 'OFF'}`;
-    pauseResumeBtn.textContent = gameState.paused ? 'Resume Game' : 'Pause Game';
+    settingsModal.classList.remove("hidden");
+    settingsModal.setAttribute("aria-hidden","false");
+    audioToggleBtn.textContent = `Audio: ${gameState.audioOn ? "ON" : "OFF"}`;
+    pauseResumeBtn.textContent = gameState.paused ? "Resume" : "Pause";
 }
 
 function closeSettings() {
-    settingsModal.classList.add('hidden');
-    settingsModal.setAttribute('aria-hidden', 'true');
+    settingsModal.classList.add("hidden");
+    settingsModal.setAttribute("aria-hidden","true");
 }
 
-/**
- * Main Game Loop
- */
-function gameLoop(currentTime) {
-    // Calculate delta time
-    const deltaTime = Math.min(100, currentTime - gameState.lastFrameTime);
-    gameState.lastFrameTime = currentTime;
+settingsModal.addEventListener("click", (e) => {
+    if (e.target === settingsModal) closeSettings();
+});
+
+document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeSettings();
+});
+
+// Settings actions
+backMenuBtn.addEventListener("click", () => {
+    audioManager.stopAll();
+    gameState.reset();
+    player.reset();
+    player.setMovementEnabled(false);
+    eyes = []; 
+    entities = [];
+    for (let i = 0; i < CONFIG.ENTITIES.COUNT.MIN; i++) spawnEntity();
+    settingsBtn.classList.add('hidden');
     
-    // Update music if 10 minutes have passed
-    updateMusic(currentTime);
-    
-    // Update game state
-    if (!gameState.paused) {
-        player.update(inputManager.keys, canvas.width, canvas.height);
-        entityManager.update(deltaTime, player);
+    if (gameState.isMobile) {
+        joypad.hide();
     }
     
-    // Render game
-    renderer.clear();
-    
-    if (gameState.onTitleScreen) {
-        renderer.renderTitleScreen();
+    if (gameState.audioOn) audioManager.titleMusic.play().catch(() => {});
+    closeSettings();
+});
+
+exitBtn.addEventListener("click", () => {
+    try { window.close(); } catch(e) {}
+    window.location.href = "about:blank";
+});
+
+audioToggleBtn.addEventListener("click", () => {
+    gameState.audioOn = !gameState.audioOn;
+    audioToggleBtn.textContent = `Audio: ${gameState.audioOn ? "ON" : "OFF"}`;
+    if (!gameState.audioOn) {
+        audioManager.stopAll();
     } else {
-        renderer.renderGameWorld(entityManager, player, playerImage, entityImage);
-        renderer.renderHUD(player);
-        
-        if (gameState.gameActive) {
-            renderer.renderGlitchEffect(player);
+        if (gameState.onTitle) {
+            audioManager.titleMusic.play().catch(() => {});
+        } else if (gameState.gameStarted && !gameState.gameOver) {
+            audioManager.playGameAudio();
         }
-        
-        if (gameState.gameOver) {
-            renderer.renderGameOver();
-        }
-    }
-    
-    // Continue game loop
-    requestAnimationFrame(gameLoop);
-}
-
-function updateMusic(currentTime) {
-    if (!gameState.gameActive || gameState.musicChanged) return;
-    
-    const elapsed = currentTime - gameState.gameStartTime;
-    if (elapsed >= 600000) { // 10 minutes
-        gameState.musicChanged = true;
-        if (gameState.audioEnabled) {
-            audioManager.stop('bgm');
-            audioManager.stop('wind');
-            audioManager.play('coreDream');
-        }
-    }
-}
-
-/**
- * Error Handling
- */
-function showErrorScreen(message) {
-    if (loadingScreen) {
-        loadingScreen.innerHTML = `
-            <div class="loading-content">
-                <div class="loading-text" style="color: #ff4444;">Error</div>
-                <div class="loading-progress">${message}</div>
-                <button onclick="window.location.reload()" style="
-                    margin-top: 20px;
-                    padding: 10px 20px;
-                    background: #333;
-                    color: white;
-                    border: none;
-                    border-radius: 5px;
-                    cursor: pointer;
-                    font-family: 'Press Start 2P', monospace;
-                ">Reload Page</button>
-            </div>
-        `;
-    }
-}
-
-/**
- * Start the game when the page loads
- */
-window.addEventListener('load', initializeGame);
-
-/**
- * Prevent context menu on right-click
- */
-canvas.addEventListener('contextmenu', (event) => {
-    event.preventDefault();
-});
-
-/**
- * Handle page visibility changes
- */
-document.addEventListener('visibilitychange', () => {
-    if (document.hidden && gameState.gameActive && !gameState.paused) {
-        inputManager.togglePause();
     }
 });
 
-// Export for debugging
-window.gameDebug = {
-    gameState,
-    player,
-    entityManager,
-    audioManager
-};
+pauseResumeBtn.addEventListener("click", () => {
+    if (gameState.onTitle) return;
+    
+    gameState.paused = !gameState.paused;
+    pauseResumeBtn.textContent = gameState.paused ? "Resume" : "Pause";
+    if (gameState.paused) {
+        audioManager.bgm.pause();
+        audioManager.windSnd.pause();
+        audioManager.coreDreamMusic.pause();
+        player.setMovementEnabled(false);
+    } else {
+        player.setMovementEnabled(true);
+        if (gameState.audioOn && gameState.gameStarted && !gameState.gameOver) {
+            audioManager.playGameAudio();
+        }
+    }
+});
+
+// ========== SPAWN FUNCTIONS ==========
+function spawnFog() {
+    fogs.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        radius: Math.random() * (CONFIG.FOG.RADIUS.MAX - CONFIG.FOG.RADIUS.MIN) + CONFIG.FOG.RADIUS.MIN,
+        speed: Math.random() * (CONFIG.FOG.SPEED.MAX - CONFIG.FOG.SPEED.MIN) + CONFIG.FOG.SPEED.MIN,
+        alpha: Math.random() * (CONFIG.FOG.ALPHA.MAX - CONFIG.FOG.ALPHA.MIN) + CONFIG.FOG.ALPHA.MIN
+    });
+}
+
+function spawnParticle() {
+    particles.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        size: Math.random() * (CONFIG.PARTICLES.SIZE.MAX - CONFIG.PARTICLES.SIZE.MIN) + CONFIG.PARTICLES.SIZE.MIN,
+        speedX: Math.random() * (CONFIG.PARTICLES.SPEED_X.MAX - CONFIG.PARTICLES.SPEED_X.MIN) + CONFIG.PARTICLES.SPEED_X.MIN,
+        speedY: Math.random() * (CONFIG.PARTICLES.SPEED_Y.MAX - CONFIG.PARTICLES.SPEED_Y.MIN) + CONFIG.PARTICLES.SPEED_Y.MIN,
+        alpha: Math.random() * (CONFIG.PARTICLES.ALPHA.MAX - CONFIG.PARTICLES.ALPHA.MIN) + CONFIG.PARTICLES.ALPHA.MIN
+    });
+}
+
+function spawnEye() {
+    const size = Math.random() * (CONFIG.EYES.SIZE.MAX - CONFIG.EYES.SIZE.MIN) + CONFIG.EYES.SIZE.MIN;
+    eyes.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height * 0.45,
+        size,
+        alpha: 0,
+        openSpeed: Math.random() * (CONFIG.EYES.OPEN_SPEED.MAX - CONFIG.EYES.OPEN_SPEED.MIN) + CONFIG.EYES.OPEN_SPEED.MIN,
+        createdAt: performance.now(),
+        ttl: (Math.random() * (CONFIG.EYES.TTL.MAX - CONFIG.EYES.TTL.MIN) + CONFIG.EYES.TTL.MIN) * 1000,
+        fadingOut: false
+    });
+}
+
+function spawnEntity() {
+    const size = Math.random() * (CONFIG.ENTITIES.SIZE.MAX - CONFIG.ENTITIES.SIZE.MIN) + CONFIG.ENTITIES.SIZE.MIN;
+    entities.push({
+        x: Math.random() * (canvas.width - size),
+        y: Math.random() * (canvas.height - size),
+        size: size,
+        vx: (Math.random() - 0.5) * CONFIG.ENTITIES.SPEED,
+        vy: (Math.random() - 0.5) * CONFIG.ENTITIES.SPEED,
+        createdAt: performance.now()
+    });
+}
+
+// Initialize game environment
+for (let i = 0; i < CONFIG.FOG.COUNT; i++) spawnFog();
+for (let i = 0; i < CONFIG.PARTICLES.COUNT; i++) spawnParticle();
+for (let i = 0; i < CONFIG.ENTITIES.COUNT.MIN; i++) spawnEntity();
+
+// ========== GAME START HANDLING ==========
+canvas.addEventListener("click", (e) => {
+    if (gameState.onTitle && !gameState.titleInteracted) {
+        gameState.titleInteracted = true;
+        if (gameState.audioOn) audioManager.titleMusic.play().catch(() => {});
+    } else if (gameState.onTitle && gameState.titleInteracted) {
+        startGame();
+    }
+});
+
+document.addEventListener("keydown", (e) => {
+    if (gameState.onTitle) {
+        if ((e.key === "Enter" || e.key === " ") && gameState.titleInteracted) startGame();
+        if ((e.key === "Enter" || e.key === " ") && !gameState.titleInteracted) {
+            gameState.titleInteracted = true;
+            if (gameState.audioOn) audioManager.titleMusic.play().catch(() => {});
+            startGame();
+        }
+    } else {
+        if (gameState.gameOver && (e.key === "r" || e.key === "R")) restartGame();
+    }
+});
+
+function startGame() {
+    gameState.onTitle = false;
+    gameState.gameStarted = true;
+    gameState.gameOver = false;
+    gameState.paused = false;
+    gameState.startedAtTime = performance.now();
+    
+    player.setMovementEnabled(true);
+    
+    settingsBtn.classList.remove('hidden');
+    
+    if (gameState.isMobile) {
+        joypad.show();
+    }
+    
+    if (gameState.audioOn) {
+        audioManager.titleMusic.pause();
+        audioManager.titleMusic.currentTime = 0;
+        audioManager.playGameAudio();
+    }
+    
+    keys = {};
+}
+
+function restartGame() {
+    player.reset();
+    player.setMovementEnabled(true);
+    entities = [];
+    eyes = [];
+    for (let i = 0; i < CONFIG.ENTITIES.COUNT.MIN; i++) spawnEntity();
+    gameState.gameOver = false;
+    gameState.paused = false;
+    musicChanged = false;
+    settingsBtn.classList.remove('hidden');
+    
+    keys = {};
+    
+    if (gameState.audioOn) audioManager.playGameAudio();
+    gameState.startedAtTime = performance.now();
+}
+
+// ========== UPDATE LOOP ==========
+function update(dt) {
+    const deltaTime = dt / 16;
+    
+    if (gameState.gameStarted && !gameState.gameOver && !musicChanged) {
+        const currentTime = performance.now();
+        const elapsed = currentTime - gameState.startedAtTime;
+        
+        if (elapsed >= musicChangeTime) {
+            musicChanged = true;
+            if (gameState.audioOn) {
+                audioManager.bgm.pause();
+                audioManager.windSnd.pause();
+                audioManager.coreDreamMusic.play().catch(() => {});
+            }
+        }
+    }
+    
+    if (!gameState.paused && gameState.gameStarted && !gameState.gameOver) {
+        const joypadVector = gameState.isMobile ? joypad.getVector() : null;
+        
+        player.update(keys, joypadVector);
+        
+        fogs.forEach(f => {
+            f.x += f.speed * deltaTime;
+            if (f.x - f.radius > canvas.width) {
+                f.x = -f.radius;
+                f.y = Math.random() * canvas.height;
+            }
+        });
+        if (fogs.length < CONFIG.FOG.MAX && Math.random() < 0.01) spawnFog();
+        
+        particles.forEach(p => {
+            p.x += p.speedX * deltaTime;
+            p.y += p.speedY * deltaTime;
+            p.alpha -= 0.002 * deltaTime;
+        });
+        particles = particles.filter(p => p.alpha > 0);
+        if (particles.length < CONFIG.PARTICLES.MAX && Math.random() < 0.15) spawnParticle();
+        
+        const now = performance.now();
+        for (let i = eyes.length - 1; i >= 0; i--) {
+            const e = eyes[i];
+            const age = now - e.createdAt;
+            if (!e.fadingOut && e.alpha < CONFIG.EYES.ALPHA_MAX) {
+                e.alpha = Math.min(CONFIG.EYES.ALPHA_MAX, e.alpha + e.openSpeed * deltaTime);
+            }
+            if (!e.fadingOut && age > e.ttl) e.fadingOut = true;
+            if (e.fadingOut) {
+                e.alpha -= 0.008 * deltaTime;
+                if (e.alpha <= 0) {
+                    eyes.splice(i, 1);
+                    continue;
+                }
+            }
+            e.x += (Math.random() - 0.5) * 0.15 * deltaTime;
+            e.y += (Math.random() - 0.5) * 0.12 * deltaTime;
+        }
+        
+        for (let i = entities.length - 1; i >= 0; i--) {
+            const en = entities[i];
+            en.x += en.vx * deltaTime;
+            en.y += en.vy * deltaTime;
+            if (en.x < 0 || en.x > canvas.width - en.size) en.vx *= -1;
+            if (en.y < 0 || en.y > canvas.height - en.size) en.vy *= -1;
+            
+            const px = player.x + player.size / 2;
+            const py = player.y + player.size / 2;
+            const ex = en.x + en.size / 2;
+            const ey = en.y + en.size / 2;
+            const dx = px - ex;
+            const dy = py - ey;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < (player.size / 2 + en.size / 2)) {
+                player.takeDamage(en);
+            }
+        }
+        
+        eyeSpawnTimer -= dt;
+        if (eyeSpawnTimer <= 0) {
+            if (Math.random() < CONFIG.EYES.SPAWN_CHANCE) spawnEye();
+            eyeSpawnTimer = CONFIG.EYES.SPAWN_TIMER.MIN + Math.random() * (CONFIG.EYES.SPAWN_TIMER.MAX - CONFIG.EYES.SPAWN_TIMER.MIN);
+        }
+        if (entities.length < CONFIG.ENTITIES.COUNT.MIN && Math.random() < 0.01) spawnEntity();
+    }
+}
+
+// ========== DRAWING UTILITIES ==========
+function drawCenteredText(text, size = 20, yOffset = 0) {
+    ctx.fillStyle = "white";
+    ctx.font = `${size}px 'Press Start 2P', monospace`;
+    const m = ctx.measureText(text);
+    ctx.fillText(text, (canvas.width - m.width) / 2, (canvas.height / 2) + yOffset);
+}
+
+function formatTimer(ms) {
+    const s = Math.floor(ms / 1000);
+    const mm = Math.floor(s / 60);
+    const ss = s % 60;
+    const pad = n => n.toString().padStart(2, '0');
+    return `${pad(mm)} : ${pad(ss)}`;
+}
+
+// Glitch effect with sound
+let glitchSoundPlayed = false;
+function drawGlitch() {
+    if (!glitchSoundPlayed) {
+        audioManager.playGlitch();
+        glitchSoundPlayed = true;
+        setTimeout(() => { glitchSoundPlayed = false; }, 2000);
+    }
+    
+    const alpha = 0.22 * (1 - player.hp / 30);
+    for (let i = 0; i < 10; i++) {
+        const w = Math.random() * canvas.width * 0.6;
+        const h = 4 + Math.random() * 10;
+        const x = Math.random() * canvas.width;
+        const y = Math.random() * canvas.height;
+        ctx.fillStyle = `rgba(${180 + Math.random() * 70 | 0}, 40, 60, ${alpha * 0.4})`;
+        ctx.fillRect(x, y, w, h);
+    }
+    ctx.globalAlpha = alpha * 0.7;
+    for (let y = 0; y < canvas.height; y += 6) {
+        ctx.fillStyle = "rgba(0,0,0,0.03)";
+        ctx.fillRect(0, y, canvas.width, 2);
+    }
+    ctx.globalAlpha = 1;
+}
+
+// ========== DRAW LOOP ==========
+function draw() {
+    ctx.fillStyle = "black";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    fogs.forEach(f => {
+        const g = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.radius);
+        g.addColorStop(0, `rgba(200,200,255,${f.alpha})`);
+        g.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(f.x, f.y, f.radius, 0, Math.PI * 2);
+        ctx.fill();
+    });
+    
+    particles.forEach(p => {
+        ctx.fillStyle = `rgba(170,170,220,${p.alpha})`;
+        ctx.fillRect(p.x, p.y, p.size, p.size);
+    });
+    
+    eyes.forEach(e => {
+        if (e.alpha <= 0) return;
+        ctx.save();
+        ctx.globalAlpha = e.alpha * 0.85;
+        ctx.translate(e.x, e.y);
+        ctx.scale(1.2, 0.55);
+        ctx.beginPath();
+        ctx.arc(0, 0, e.size, 0, Math.PI * 2);
+        ctx.restore();
+        ctx.strokeStyle = `rgba(255,255,255,${e.alpha * 0.85})`;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        
+        const eyeCx = e.x;
+        const eyeCy = e.y;
+        const px = player.x + player.size / 2;
+        const py = player.y + player.size / 2;
+        let dx = px - eyeCx;
+        let dy = py - eyeCy;
+        const d = Math.sqrt(dx * dx + dy * dy) || 1;
+        const maxOffset = Math.max(3, e.size * 0.18);
+        const offsetX = (dx / d) * Math.min(maxOffset, d * 0.15);
+        const offsetY = (dy / d) * Math.min(maxOffset, d * 0.15);
+        const pupilSize = Math.max(3, e.size * 0.16);
+        
+        ctx.beginPath();
+        ctx.fillStyle = `rgba(255,255,255,${Math.min(1, e.alpha * 1.1)})`;
+        ctx.arc(eyeCx + offsetX, eyeCy + offsetY, pupilSize, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.beginPath();
+        ctx.fillStyle = `rgba(30,30,30,${0.18 * e.alpha})`;
+        ctx.arc(eyeCx + offsetX, eyeCy + offsetY, Math.max(1, pupilSize * 0.5), 0, Math.PI * 2);
+        ctx.fill();
+    });
+    
+    entities.forEach(en => {
+        if (entityImg.complete && entityImg.naturalWidth > 0) {
+            ctx.drawImage(entityImg, en.x, en.y, en.size, en.size);
+        } else {
+            ctx.fillStyle = "rgba(30,30,30,0.95)";
+            ctx.beginPath();
+            ctx.ellipse(en.x + en.size / 2, en.y + en.size / 2, en.size / 1.2, en.size * 0.9, 0, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    });
+    
+    const radius = Math.max(120, Math.min(canvas.width, canvas.height) * 0.25);
+    const light = ctx.createRadialGradient(
+        player.x + player.size / 2, player.y + player.size / 2, 0,
+        player.x + player.size / 2, player.y + player.size / 2, radius
+    );
+    light.addColorStop(0, "rgba(255,255,255,0)");
+    light.addColorStop(0.5, "rgba(0,0,0,0.64)");
+    light.addColorStop(1, "rgba(0,0,0,1)");
+    ctx.fillStyle = light;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    if (playerImg.complete && playerImg.naturalWidth > 0) {
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(playerImg, player.x, player.y, player.size, player.size);
+    } else {
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(player.x, player.y, player.size, player.size);
+    }
+    
+    ctx.fillStyle = "rgba(255,255,255,0.95)";
+    ctx.font = `14px 'Press Start 2P', monospace`;
+    if (gameState.gameStarted) {
+        const elapsed = performance.now() - gameState.startedAtTime;
+        ctx.fillText(formatTimer(elapsed), (canvas.width / 2) - 36, 24);
+    }
+    
+    const hpW = 200;
+    const hpH = 14;
+    const hpX = 16;
+    const hpY = canvas.height - (hpH + 16);
+    ctx.fillStyle = "rgba(255,255,255,0.12)";
+    ctx.fillRect(hpX, hpY, hpW, hpH);
+    ctx.fillStyle = `rgba(${200 - (player.hp * 1.6)}, ${Math.min(200, player.hp * 2)}, 80, 0.95)`;
+    ctx.fillRect(hpX, hpY, (player.hp / 100) * hpW, hpH);
+    ctx.strokeStyle = "#555";
+    ctx.strokeRect(hpX, hpY, hpW, hpH);
+    ctx.fillStyle = "white";
+    ctx.font = `8px 'Press Start 2P', monospace`;
+    ctx.fillText(`HP:${Math.round(player.hp)}`, hpX + 6, hpY + hpH - 2);
+    
+    let warning = false;
+    for (const en of entities) {
+        const dx = (player.x + player.size / 2) - (en.x + en.size / 2);
+        const dy = (player.y + player.size / 2) - (en.y + en.size / 2);
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d < 120) {
+            warning = true;
+            break;
+        }
+    }
+    if (warning) {
+        const t = performance.now();
+        if (Math.floor(t / 300) % 2 === 0) {
+            ctx.fillStyle = "rgba(255,60,60,0.95)";
+            ctx.font = `28px 'Press Start 2P', monospace`;
+            ctx.fillText("!", canvas.width - 44, 34);
+        }
+    }
+    
+    if (gameState.onTitle) {
+        ctx.fillStyle = "rgba(0,0,0,1)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "white";
+        ctx.font = `34px 'Press Start 2P', monospace`;
+        const title = "DREAM HORROR";
+        const m = ctx.measureText(title);
+        ctx.fillText(title, (canvas.width - m.width) / 2, canvas.height * 0.33);
+        
+        ctx.font = `12px 'Press Start 2P', monospace`;
+        const versionText = "0.1.0";
+        const mv = ctx.measureText(versionText);
+        ctx.fillText(versionText, (canvas.width - mv.width) / 2, canvas.height * 0.33 + 40);
+        
+        ctx.font = `12px 'Press Start 2P', monospace`;
+        if (!gameState.titleInteracted) {
+            const hint = "Click to enable title audio";
+            const mh = ctx.measureText(hint);
+            ctx.fillText(hint, (canvas.width - mh.width) / 2, canvas.height * 0.45);
+        } else {
+            const startTxt = "Press Enter or Click to Start";
+            const ms = ctx.measureText(startTxt);
+            ctx.fillText(startTxt, (canvas.width - ms.width) / 2, canvas.height * 0.45);
+        }
+        ctx.font = `10px 'Press Start 2P', monospace`;
+        const ins = "WASD / Arrow keys to move";
+        const mi = ctx.measureText(ins);
+        ctx.fillText(ins, (canvas.width - mi.width) / 2, canvas.height * 0.5);
+    }
+    
+    if (gameState.gameOver) {
+        ctx.fillStyle = "rgba(0,0,0,0.7)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "white";
+        ctx.font = `28px 'Press Start 2P', monospace`;
+        const t = "GAME OVER";
+        const mT = ctx.measureText(t);
+        ctx.fillText(t, (canvas.width - mT.width) / 2, canvas.height / 2 - 20);
+        ctx.font = `12px 'Press Start 2P', monospace`;
+        const r = "Press R to Restart";
+        const mR = ctx.measureText(r);
+        ctx.fillText(r, (canvas.width - mR.width) / 2, canvas.height / 2 + 10);
+    }
+    
+    if (player.hp < 30 && gameState.gameStarted && !gameState.gameOver) {
+        drawGlitch();
+    }
+}
+
+// ========== MAIN GAME LOOP ==========
+function loop(ts) {
+    const now = ts || performance.now();
+    const dt = Math.min(60, now - gameState.lastFrame);
+    gameState.lastFrame = now;
+    
+    update(dt);
+    draw();
+    requestAnimationFrame(loop);
+}
+
+// ========== START GAME ==========
+window.addEventListener('load', () => {
+    player.setMovementEnabled(false);
+    
+    setTimeout(() => {
+        loadingScreen.classList.add('hidden');
+    }, 3000);
+    
+    requestAnimationFrame(loop);
+});
+
+// Enhanced resize handler
+let resizeTimeout;
+window.addEventListener('resize', () => {
+    clearTimeout(resizeTimeout);
+    resizeTimeout = setTimeout(() => {
+        resizeCanvas();
+        player.x = Math.max(0, Math.min(canvas.width - player.size, player.x));
+        player.y = Math.max(0, Math.min(canvas.height - player.size, player.y));
+    }, 100);
+});
