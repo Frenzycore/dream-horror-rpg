@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Dream Horror RPG - A chilling browser-based psychological horror experience">
+    <meta name="keywords" content="horror, rpg, game, psychological, dream, browser game">
+    <meta name="author" content="Dream Horror RPG">
+    <title>Dream Horror RPG | Psychological Horror Experience</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Loading Screen -->
+    <div id="loadingScreen" class="loading-screen">
+        <div class="loading-content">
+            <div class="loading-text">Loading Dream Horror RPG...</div>
+            <div class="loading-progress" id="loadingProgress">0%</div>
+        </div>
+    </div>
+
+    <!-- Game Interface -->
+    <button id="settingsBtn" class="settings-button hidden" aria-label="Game Settings">Settings</button>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="modal hidden" role="dialog" aria-labelledby="settingsTitle" aria-hidden="true">
+        <div class="modal-content">
+            <h2 id="settingsTitle">Game Settings</h2>
+            <div class="settings-option">
+                <button id="backMenuBtn" class="menu-button" aria-label="Return to main menu">Back to Menu</button>
+            </div>
+            <div class="settings-option">
+                <button id="exitBtn" class="menu-button" aria-label="Exit game">Exit Game</button>
+            </div>
+            <div class="settings-option">
+                <button id="audioToggleBtn" class="menu-button" aria-label="Toggle audio">Audio: ON</button>
+            </div>
+            <div class="settings-option">
+                <button id="pauseResumeBtn" class="menu-button" aria-label="Pause game">Pause Game</button>
+            </div>
+            <div class="settings-hint">Press ESC to close settings</div>
+        </div>
+    </div>
+
+    <!-- Game Canvas -->
+    <canvas id="gameCanvas" aria-label="Dream Horror RPG Game Canvas"></canvas>
+
+    <!-- Game Script -->
+    <script src="game.js"></script>
+</body>
+</html>
